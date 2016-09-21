@@ -81,12 +81,13 @@ save(as.list(ing100),file = "most_100.csv")
 
 #Usando Single Hidden Layer Neural Network
 train_100_freq_ingred <- read.csv("~/Documents/redes_neurais/cuisine/train_100_freq_ingred.csv")
+train_100_freq_ingred <- read.csv("~/Documentos/Cuisine_Challenge/train_100_freq_ingred.csv")
 
 index<-createDataPartition(train_100_freq_ingred$target,p=0.7,list=FALSE)
 train100<-train_100_freq_ingred[index,]
 test100<-train_100_freq_ingred[-index,]
 
-train.nnet<-nnet(target~.,train100,size=20,rang=0.07,Hess=FALSE,decay=0.001,maxit=250,MaxNWts = 7400)
+train.nnet<-nnet(target~.,train100,size=150,rang=0.07,Hess=FALSE,decay=0.001,maxit=250,MaxNWts = 55370)
 
 test.nnet<-predict(train.nnet,test100,type=("class"))
 
@@ -99,5 +100,28 @@ confusionMatrix(table(test100$target,test.nnet))
 model <- train(target~., train100, method='nnet', linout=TRUE, trace = FALSE,
                 #Grid of tuning parameters to try:
                 tuneGrid=expand.grid(.size=c(20,30,40),.decay=c(0,0.001,0.1))) 
+
+
+
+#Usando neuralnetwork
+
+trainData <- cbind(train_100_freq_ingred[, 1:348], class.ind(train_100_freq_ingred$target))
+
+temp <-""
+for (c in 1:length(levels(train_100_freq_ingred$target))){
+  if (c == 1){
+    temp = paste(temp, levels(train_100_freq_ingred$target)[c])
+  }
+  else{
+    temp = paste(temp, levels(train_100_freq_ingred$target)[c],sep =  " + ")  
+  }
+}
+temp <- paste(temp, "~")
+
+n <- names(train_100_freq_ingred)
+f <- as.formula(paste(temp, paste(n[!n %in% "target"], collapse = " + ")))
+
+nn<-neuralnet(f,data=trainData,hidden=c(75,75),linear.output=F)
+
 ```
 
