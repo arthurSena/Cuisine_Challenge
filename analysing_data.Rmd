@@ -1,0 +1,103 @@
+---
+title: "What’s Cooking?"
+author: "Arthur Sena"
+date: "September 18, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(jsonlite)
+library(dplyr)
+library(tm)
+library(neuralnet)
+library(nnet)
+library(caret)
+```
+
+#Analisando nossos dados
+
+Antes de qualquer coisa, precisamos saber com que tipo de dados nós estamos lidando aqui. No caso, temos um arquivo 'json' de 12MB  contendo uma lista com a descrição de 39774 pratos de comidas. Para cada um desses pratos de comidas temos uma lista de ingredientes e um determinado ID. Abaixo é possível visualizar uma porção dos nossos dados.
+
+```{r,warning=FALSE}
+  train <- fromJSON("/home/arthur/Documents/redes_neurais/cuisine/train.json")
+  head(train)
+```
+
+
+Vamos agora analisar o quão bem distribuído se encontra nossos dados.
+
+```{r,warning=FALSE}
+  c <- ggplot(train, aes(factor(cuisine)))
+  c + geom_bar()
+```
+
+Pelo gráfico acima, vemos que temos muitos pratos italianos e mexicanos nos nossos dados.
+
+#Primeira Abordagem
+Minha primeira idéia pra resolver tal problema é criar um 'dataset' que contenha 'n' colunas representando cada ingrediente encontrado no 'dataset' de treino e uma variável 'target' como rótulo. Contudo, essa idéia é inviável visto que eu tenho mais de 6 mil diferentes tipos de ingredientes, ou seja, precisaria de um 'dataset' com essa mesma quantidade de colunas :(
+
+Uma simples abordagem pra tentar resolver esse problema é tentar filtrar essa quantidade de ingredientes e tentar trabalhar com os ingredientes que se encontram mais presentes nos nossos dados.
+
+```{r, warning=F}
+
+brasil <-train[train$cuisine == 'brazilian',]
+
+```
+
+
+#teste
+```{r,warning=F}
+
+ingred_freq_by_cuisine <- read.csv("~/Documents/redes_neurais/cuisine/ingred_freq_by_cuisine.csv", header=FALSE)
+colnames(ingred_freq_by_cuisine) <- c("cuisine","ingredient","freq")
+ingred_freq_by_cuisine$freq <- as.numeric(ingred_freq_by_cuisine$freq)
+ingred_freq_by_cuisine<-ingred_freq_by_cuisine %>% arrange(cuisine,desc(freq))
+
+length(unique(ingred_freq_by_cuisine$ingredient))
+
+ingred_freq_by_cuisine_20 <- read.csv("~/Documents/redes_neurais/cuisine/ingred_freq_by_cuisine_20.csv", header=FALSE)
+colnames(ingred_freq_by_cuisine_20) <- c("cuisine","ingredient","freq")
+length(unique(ingred_freq_by_cuisine_20$ingredient))
+
+ingred_freq_by_cuisine_100 <- read.csv("~/Documents/redes_neurais/cuisine/ingred_freq_by_cuisine_100.csv", header=FALSE)
+colnames(ingred_freq_by_cuisine_100) <- c("cuisine","ingredient","freq")
+length(unique(ingred_freq_by_cuisine_100$ingredient))
+
+ing100 <- unique(ingred_freq_by_cuisine_100$ingredient)
+
+save(as.list(ing100),file = "most_100.csv")
+
+
+
+
+
+
+```
+
+```{r}
+
+#Usando Single Hidden Layer Neural Network
+train_100_freq_ingred <- read.csv("~/Documents/redes_neurais/cuisine/train_100_freq_ingred.csv")
+
+index<-createDataPartition(train_100_freq_ingred$target,p=0.7,list=FALSE)
+train100<-train_100_freq_ingred[index,]
+test100<-train_100_freq_ingred[-index,]
+
+train.nnet<-nnet(target~.,train100,size=20,rang=0.07,Hess=FALSE,decay=0.001,maxit=250,MaxNWts = 7400)
+
+test.nnet<-predict(train.nnet,test100,type=("class"))
+
+View(table(test100$target,test.nnet))
+
+confusionMatrix(table(test100$target,test.nnet))
+
+#Single Layer com Caret
+
+model <- train(target~., train100, method='nnet', linout=TRUE, trace = FALSE,
+                #Grid of tuning parameters to try:
+                tuneGrid=expand.grid(.size=c(20,30,40),.decay=c(0,0.001,0.1))) 
+```
+
