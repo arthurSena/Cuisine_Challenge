@@ -22,7 +22,7 @@ library(caret)
 Antes de qualquer coisa, precisamos saber com que tipo de dados nós estamos lidando aqui. No caso, temos um arquivo 'json' de 12MB  contendo uma lista com a descrição de 39774 pratos de comidas. Para cada um desses pratos de comidas temos uma lista de ingredientes e um determinado ID. Abaixo é possível visualizar uma porção dos nossos dados.
 
 ```{r,warning=FALSE}
-  train <- fromJSON("/home/arthur/Documents/redes_neurais/cuisine/train.json")
+  train <- fromJSON("/home/arthur/Documentos/Cuisine_Challenge/train.json")
   head(train)
 ```
 
@@ -87,7 +87,22 @@ index<-createDataPartition(train_100_freq_ingred$target,p=0.7,list=FALSE)
 train100<-train_100_freq_ingred[index,]
 test100<-train_100_freq_ingred[-index,]
 
-train.nnet<-nnet(target~.,train100,size=150,rang=0.07,Hess=FALSE,decay=0.001,maxit=250,MaxNWts = 55370)
+train.nnet<-nnet(target~.,train100,size=20,rang=0.07,Hess=FALSE,decay=0.01,maxit=250, MaxNWts = 7400)
+
+require(RCurl)
+root.url<-'https://gist.githubusercontent.com/fawda123'
+raw.fun<-paste(
+  root.url,
+  '5086859/raw/cc1544804d5027d82b70e74b83b3941cd2184354/nnet_plot_fun.r',
+  sep='/'
+  )
+script<-getURL(raw.fun, ssl.verifypeer = FALSE)
+eval(parse(text = script))
+rm('script','raw.fun')
+
+plot(train.nnet,pos.col='darkgreen',neg.col='darkblue',alpha.val=0.7,rel.rsc=15,
+circle.cex=10,cex=1.4,
+    circle.col='brown')
 
 test.nnet<-predict(train.nnet,test100,type=("class"))
 
@@ -105,7 +120,7 @@ model <- train(target~., train100, method='nnet', linout=TRUE, trace = FALSE,
 
 #Usando neuralnetwork
 
-trainData <- cbind(train_100_freq_ingred[, 1:348], class.ind(train_100_freq_ingred$target))
+trainData <- cbind(train100[, 1:348], class.ind(train100$target))
 
 temp <-""
 for (c in 1:length(levels(train_100_freq_ingred$target))){
@@ -120,8 +135,10 @@ temp <- paste(temp, "~")
 
 n <- names(train_100_freq_ingred)
 f <- as.formula(paste(temp, paste(n[!n %in% "target"], collapse = " + ")))
-
-nn<-neuralnet(f,data=trainData,hidden=c(75,75),linear.output=F)
+now <- Sys.time()
+nn<-neuralnet(f,data=trainData,hidden=c(10,10),linear.output=F, algorithm = 'backprop', learningrate = 0.01)
+difftime(Sys.time(), now, units = "secs")
+res <- compute(nn, test100)
 
 ```
 
