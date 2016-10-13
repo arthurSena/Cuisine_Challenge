@@ -15,6 +15,8 @@ library(tm)
 library(neuralnet)
 library(nnet)
 library(caret)
+library(h2o)
+library(RSNNS)
 ```
 
 #Analisando nossos dados
@@ -22,7 +24,7 @@ library(caret)
 Antes de qualquer coisa, precisamos saber com que tipo de dados nós estamos lidando aqui. No caso, temos um arquivo 'json' de 12MB  contendo uma lista com a descrição de 39774 pratos de comidas. Para cada um desses pratos de comidas temos uma lista de ingredientes e um determinado ID. Abaixo é possível visualizar uma porção dos nossos dados.
 
 ```{r,warning=FALSE}
-  train <- fromJSON("/home/arthur/Documentos/Cuisine_Challenge/train.json")
+  train <- fromJSON("/home/arthur/Documents/redes_neurais/cuisine/train.json")
   head(train)
 ```
 
@@ -39,7 +41,7 @@ Pelo gráfico acima, vemos que temos muitos pratos italianos e mexicanos nos nos
 #Primeira Abordagem
 Minha primeira idéia pra resolver tal problema é criar um 'dataset' que contenha 'n' colunas representando cada ingrediente encontrado no 'dataset' de treino e uma variável 'target' como rótulo. Contudo, essa idéia é inviável visto que eu tenho mais de 6 mil diferentes tipos de ingredientes, ou seja, precisaria de um 'dataset' com essa mesma quantidade de colunas :(
 
-Uma simples abordagem pra tentar resolver esse problema é tentar filtrar essa quantidade de ingredientes e tentar trabalhar com os ingredientes que se encontram mais presentes nos nossos dados. Assim sendo, criei um script em python que filtrasse os ingredientes que mais utilizados por categoria como pode ser visto logo abaixo.
+Uma simples abordagem pra tentar resolver esse problema é tentar filtrar essa quantidade de ingredientes e tentar trabalhar com os ingredientes que se encontram mais presentes nos nossos dados. Assim sendo, criei um script em python que filtrasse os ingredientes que são mais utilizados por categoria como pode ser visto logo abaixo.
 
 ```{r, warning=F}
 
@@ -50,9 +52,7 @@ print(length(unique(ingred_freq_by_cuisine_100$ingredient)))
 ```
 *No caso o script filtrou apenas os ingredientes que foram usados mais de cem vezes
 
-Com esses dados em mãos, podemos gerar um dataset de treino que contenha apenas tais ingredientes (348) e, talvez assim,
-diminuir a quantidade de variáveis usadas no nosso treinamento. A fim de gerar esse dataset, eu novamente utilizei
-um script em python que se encarrega de gerar o CSV corretamente.
+Com esses dados em mãos, podemos gerar um dataset de treino que contenha apenas tais ingredientes (348) e, talvez assim, diminuir a quantidade de variáveis usadas no nosso treinamento. A fim de gerar esse dataset, eu novamente utilizei um script em python que se encarrega de gerar o CSV corretamente.
 
 Vamos agora dividir os dados em treino e teste.
 
@@ -92,41 +92,61 @@ Observando a matriz de confusão, vemos que obtivemos uma acurácia de ~64%, o q
 Vamos treinar uma rede multilayer e obsevar se conseguimos um melhor resultado.
 
 ```{r,warning=F, echo=F}
+train_mlp <- train_100_freq_ingred[,1:348]
+test_mlp <- decodeClassLabels(train_100_freq_ingred[,349])
 
-#Preparando os dados para treinamento
-trainData <- cbind(train100[, 1:348], class.ind(train100$target))
-
-temp <-""
-for (c in 1:length(levels(train_100_freq_ingred$target))){
-  if (c == 1){
-    temp = paste(temp, levels(train_100_freq_ingred$target)[c])
-  }
-  else{
-    temp = paste(temp, levels(train_100_freq_ingred$target)[c],sep =  " + ")  
-  }
-}
-temp <- paste(temp, "~")
-
-n <- names(train_100_freq_ingred)
-f <- as.formula(paste(temp, paste(n[!n %in% "target"], collapse = " + ")))
+data <- splitForTrainingAndTest(train_mlp, test_mlp, ratio=0.15)
+data <- normTrainingAndTestSet(data)
 
 #Treinando a rede 
 # 2 Camadas escondidas
-# 10 neurônios cada
+# 30 e 20 neurônios cada uma
 # Backpropagation como algoritmo de treinamento
 # 1% de Taxa de Aprendizagem
-nn<-neuralnet(f,data=trainData,hidden=c(10,10),linear.output=F, algorithm = 'backprop', learningrate = 0.01)
-plot(nn)
+
+model <- mlp(data$inputsTrain, data$targetsTrain, size=c(30,20), learnFuncParams=c(0.01), 
+             maxit=250, inputsTest=data$inputsTest, targetsTest=data$targetsTest)
+
 ```
 
 Rede criada. Vamos agora testá-la e observar seu desempenho.
+```{r, echo=F, warning=F}
 
-```{r,warning=F,echo = F}
-res <- compute(nn, test100[,1:348])
-resTable<-table(round(res$net.result) ,class.ind(test100$target))
+predictions <- predict(model,data$inputsTest)
+cm <- confusionMatrix(iris$targetsTest,predictions)
+print(cm)
+print("Acurácia: " + sum(diag(cm))/sum(cm))
 
-confusionMatrix(as.factor(test100$target),as.factor(round(res$net.result)))
 ```
+
+Não conseguimos uma melhora significativa utilizando uma rede com mais de uma camada infelizmente.
+
+
+```{r,warning=F, echo=F}
+
+
+ h2o.init()
+localH2O <- h2o.init(ip = "localhost", port = 54321, startH2O = TRUE)
+dat_h2o <- as.h2o(train100, destination_frame = "train")
+dat_h2o2 <- as.h2o(test100, destination_frame = "test")
+summary(dat_h2o)
+dat_h2o$target <- as.factor(dat_h2o$target)
+
+dpl = h2o.deeplearning(x = 1:348, training_frame = "train", activation = "Tanh", hidden = c(30, 30, 20), epochs = 10000, autoencoder = T)
+
+
+performance = h2o.performance(model = dpl)
+print(performance)
+
+
+perf.gbm <- h2o.performance(dpl, dat_h2o2)
+print(perf.gbm)
+h2o.confusionMatrix(dpl,dat_h2o, metr )
+
+
+h2o.confusionMatrix(predictions, dat_h2o2[,349])
+```
+
 
 #teste
 ```{r,warning=F}
